@@ -3,7 +3,7 @@ const {User} = require('../../../models/user.model');
 const OTPDOMAIN = "https://2factor.in/API/V1/";
 const OTPAUTOGEN = "/AUTOGEN";
 const OTPTRANSPORT = "/SMS/";
-const OTPKEY = process.env['2FACTOR_KEY'];
+const OTPKEY = process.env.TWOFACTOR_KEY;
 
 //template is the one you created on 2FACTOR website
 let OTPTEMPLATE;
