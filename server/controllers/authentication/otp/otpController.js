@@ -14,38 +14,38 @@ const OTPTEMPLATE_LOGIN = "crickcard login";
 
 var request = require('request-promise-native');
 
-generateNewOtp = async (req, res) => {
-    const mobile = req.body.cc + req.body.mobile;
-    //remove previous OTP
-    await Otp.findOneAndRemove({
-        mobile: mobile,
-        otpType: req.body.otpType
-    });
+// generateNewOtp = async (req, res) => {
+//     const mobile = req.body.cc + req.body.mobile;
+//     //remove previous OTP
+//     await Otp.findOneAndRemove({
+//         mobile: mobile,
+//         otpType: req.body.otpType
+//     });
 
-    let newOtp = new Otp({
-        mobile: mobile
-    });
+//     let newOtp = new Otp({
+//         mobile: mobile
+//     });
 
-    try {
-        await newOtp.save();
-        await newOtp.generateOtp(req.body.otpType);
-        return newOtp;
-    } catch(err) {
-        let error = err;
-        if (err.name === 'ValidationError') {
-            console.log("MobileValidationError: \n", err);
-            error = 'mobile number is invalid.';
-        }
+//     try {
+//         await newOtp.save();
+//         await newOtp.generateOtp(req.body.otpType);
+//         return newOtp;
+//     } catch(err) {
+//         let error = err;
+//         if (err.name === 'ValidationError') {
+//             console.log("MobileValidationError: \n", err);
+//             error = 'mobile number is invalid.';
+//         }
 
-        res.status(400).send({"errorMsg": error});   
-        return false;         
-    }
-}
+//         res.status(400).send({"errorMsg": error});   
+//         return false;         
+//     }
+// }
 
-sendSMSOtp = (newOtp) => {
-    console.log("Attempt OTP", OTPAPIENDPOINT);
+sendSMSOtp = (newOtp, mobile, res) => {
     //this will create the URI needed to send an OTP via 2FACTOR
     const OTPAPIENDPOINT = OTPDOMAIN + OTPKEY + OTPTRANSPORT + mobile + "/" + newOtp + "/" + OTPTEMPLATE;
+    console.log("Attempt OTP", OTPAPIENDPOINT);
     const otpResponse =  request({
         uri: OTPAPIENDPOINT,
         headers: {"content-type": "application/x-www-form-urlencoded"},
@@ -109,9 +109,10 @@ module.exports = {
             OTPTEMPLATE = OTPTEMPLATE_LOGIN;
             try {
                 if (! await validator.isMobilePhone(mobile, 'any', {strictMode: true}) ) {
+                    console.log("validating mobile number: ", mobile);
                     throw new Error("ValidationError");
                 }
-
+                console.log("finding user");
                 const user = await User.findOne({mobile});
                 if(!user) {
                     console.log("SEND OTP:  NOT REGISTERED");
@@ -132,7 +133,8 @@ module.exports = {
         }
 
         try {
-            await Otp.findOneAndRemove({
+            console.log("trying to send OTP");
+            await Otp.remove({
                 mobile: mobile,
                 otpType: req.body.otpType
             });
@@ -140,11 +142,14 @@ module.exports = {
                 mobile: mobile
             });
             await newOtp.save();
-            const otp = await newOtp.generateOtp();
-            await sendSMSOtp(otp);
-            console.log("GENERATE", newOtp);
+            // if (req.body.otpType === 'registration') {
+            //     await newOtp.save();
+            // }
+            const otp = await newOtp.generateOtp(req.body.otpType);
+            await sendSMSOtp(otp, mobile, res);
         } catch (err) {
             let error = err;
+            console.log(err);
             if (err.name === 'ValidationError') {
                 console.log("SEND OTP ERROR: \n", err);
                 error = 'mobile number is invalid.';
@@ -168,12 +173,13 @@ module.exports = {
             return res.status(400).send({"errorMsg": "invalid request."});
         }
         const mobile = req.body.cc + req.body.mobile;
-        console.log("SEARCH MOBILE: ", mobile);
-        await Otp.findOne({
+        console.log("SEARCH MOBILE: ", mobile, req.body.otpType);
+        Otp.findOne({
             mobile: mobile,
             otpType: req.body.otpType
         }).then( async (userOtp) => {
             if (!userOtp) {
+                console.log("OTP not found: ", userOtp);
                 return res.status(400).send({"errorMsg": "invalid request."});
             }
             if (userOtp.otp === req.body.otp) {

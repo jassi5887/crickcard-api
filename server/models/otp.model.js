@@ -34,7 +34,7 @@ OtpSchema.methods.generateOtp = function(otpType) {
     var otp = this;
     otp.otp = Math.floor(100000 + Math.random() * 900000);
     otp.otpType = otpType;
-
+    console.log("Saving OTP: ", otp.otp, otpType);
     return otp.save().then(() => {
         return otp.otp;
     });
