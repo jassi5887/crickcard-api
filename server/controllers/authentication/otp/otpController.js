@@ -1,5 +1,7 @@
 const {Otp} = require('../../../models/otp.model');
 const {User} = require('../../../models/user.model');
+const validator = require('validator');
+
 const OTPDOMAIN = "https://2factor.in/API/V1/";
 const OTPAUTOGEN = "/AUTOGEN";
 const OTPTRANSPORT = "/SMS/";
@@ -20,7 +22,7 @@ generateNewOtp = async (req, res) => {
         otpType: req.body.otpType
     });
 
-    var newOtp = new Otp({
+    let newOtp = new Otp({
         mobile: mobile
     });
 
@@ -35,19 +37,30 @@ generateNewOtp = async (req, res) => {
             error = 'mobile number is invalid.';
         }
 
-        return res.status(400).send({"errorMsg": error});            
+        res.status(400).send({"errorMsg": error});   
+        return false;         
     }
 }
 
-
-sendSMSOtp = (OTPAPIENDPOINT) => {
+sendSMSOtp = (newOtp) => {
     console.log("Attempt OTP", OTPAPIENDPOINT);
-    return request({
+    //this will create the URI needed to send an OTP via 2FACTOR
+    const OTPAPIENDPOINT = OTPDOMAIN + OTPKEY + OTPTRANSPORT + mobile + "/" + newOtp + "/" + OTPTEMPLATE;
+    const otpResponse =  request({
         uri: OTPAPIENDPOINT,
         headers: {"content-type": "application/x-www-form-urlencoded"},
         json: true
     });
+
+    if(!otpResponse.Status === "Success") {
+        console.error("OTP could not be Sent: \n", otpResponse);
+        return res.status(400).send();
+    }
+
+    console.log("OTP sent");
+    res.status(200).send({"message": "otp generated"});
 }
+
 module.exports = {
 
     /**
@@ -65,7 +78,7 @@ module.exports = {
         const mobile = req.body.cc + req.body.mobile;
         let notRegistered = false;
         let alreadyRegistered = false;
-        let newOtp;
+        //let newOtp;
         
         if (req.body.otpType == "registration") {
             console.log("OTP TYPE: REGISTRATION");
@@ -78,12 +91,16 @@ module.exports = {
                     console.log("SEND OTP:  ALREADY REGISTERED");
                     alreadyRegistered = true;
                     return res.status(400).send({"errorMsg": "Already registered. Please Login."});
-                } else {
-                    newOtp = generateNewOtp(req, res);
-                    console.log("GENERATE", newOtp);
                 }
             } catch(err) {
-                res.status(400).send();
+                let error = err;
+                if (err.name === 'ValidationError') {
+                    console.log("MobileValidationError: \n", err);
+                    error = 'mobile number is invalid.';
+                } else {
+                    error = 'something went wrong';
+                }
+                return res.status(400).send({"errorMsg": error});
             }
         }
 
@@ -91,45 +108,50 @@ module.exports = {
             console.log("OTP TYPE: LOGIN");
             OTPTEMPLATE = OTPTEMPLATE_LOGIN;
             try {
+                if (! await validator.isMobilePhone(mobile, 'any', {strictMode: true}) ) {
+                    throw new Error("ValidationError");
+                }
+
                 const user = await User.findOne({mobile});
                 if(!user) {
                     console.log("SEND OTP:  NOT REGISTERED");
                     notRegistered = true;
                     return res.status(400).send({"errorMsg": "Not registered. Please Register."});
-                } else {
-                    newOtp = generateNewOtp(req, res);
                 }
             } catch(err) {
-                return res.status(400).send();
-            }
-        }
-        
-        //this will create the URI needed to send an OTP via 2FACTOR
-
-        if (newOtp !== undefined) {
-            console.log("OTPKEY: ", OTPKEY);
-            newOtp.then(async (newOtpObj) => {
-                const OTPAPIENDPOINT = OTPDOMAIN + OTPKEY + OTPTRANSPORT + mobile + "/" + newOtpObj.otp + "/" + OTPTEMPLATE;
-                const otpResponse = await sendSMSOtp(OTPAPIENDPOINT);
-                console.log(otpResponse);
-
-                if(!otpResponse.Status === "Success") {
-                    console.error("OTP could not be Sent: \n", otpResponse);
-                    return res.status(400).send();
-                }
-
-                console.log("OTP sent");
-                res.status(200).send({"message": "otp generated"});
-            }, (err) => {
-                let error = err;
-                if (err.name === 'ValidationError') {
+                let error = err.message;
+                
+                if (err.name === 'ValidationError' || error == 'ValidationError') {
                     console.log("MobileValidationError: \n", err);
                     error = 'mobile number is invalid.';
+                } else {
+                    error = 'something went wrong';
                 }
-                return res.status(400).send({"errorMsg": error});   
+                return res.status(400).send({"errorMsg": error});
+            }
+        }
+
+        try {
+            await Otp.findOneAndRemove({
+                mobile: mobile,
+                otpType: req.body.otpType
             });
-        } else {
-            res.status(400).send({"errorMsg": "something went wrong!"});
+            let newOtp = new Otp({
+                mobile: mobile
+            });
+            await newOtp.save();
+            const otp = await newOtp.generateOtp();
+            await sendSMSOtp(otp);
+            console.log("GENERATE", newOtp);
+        } catch (err) {
+            let error = err;
+            if (err.name === 'ValidationError') {
+                console.log("SEND OTP ERROR: \n", err);
+                error = 'mobile number is invalid.';
+            } else {
+                error = 'something went wrong';
+            }
+            return res.status(400).send({"errorMsg": error});
         }
     },
 

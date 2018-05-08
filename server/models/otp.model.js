@@ -36,7 +36,7 @@ OtpSchema.methods.generateOtp = function(otpType) {
     otp.otpType = otpType;
 
     return otp.save().then(() => {
-        return true;
+        return otp.otp;
     });
 
 };
