@@ -107,6 +107,7 @@ module.exports = {
         //this will create the URI needed to send an OTP via 2FACTOR
 
         if (newOtp !== undefined) {
+            console.log("OTPKEY: ", OTPKEY);
             newOtp.then(async (newOtpObj) => {
                 const OTPAPIENDPOINT = OTPDOMAIN + OTPKEY + OTPTRANSPORT + mobile + "/" + newOtpObj.otp + "/" + OTPTEMPLATE;
                 const otpResponse = await sendSMSOtp(OTPAPIENDPOINT);
