@@ -120,6 +120,13 @@ module.exports = {
 
                 console.log("OTP sent");
                 res.status(200).send({"message": "otp generated"});
+            }, (err) => {
+                let error = err;
+                if (err.name === 'ValidationError') {
+                    console.log("MobileValidationError: \n", err);
+                    error = 'mobile number is invalid.';
+                }
+                return res.status(400).send({"errorMsg": error});   
             });
         } else {
             res.status(400).send({"errorMsg": "something went wrong!"});
