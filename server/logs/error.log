@@ -1,0 +1,7 @@
+{"level":"error","message":"registration: +91asdasdads - INVALID MOBILE"}
+{"level":"error","message":"registration: +918600400 - INVALID MOBILE"}
+{"level":"error","message":"registration: OTP CONFIRMATION - SOMETHING WENT WRONG: MongoNetworkError: failed to reconnect after 30 attempts with interval 1000 ms"}
+{"message":"404 - Page Not Found - /api/otp/confirm - GET - ::1","level":"error"}
+{"message":"404 - Page Not Found - /favicon.ico - GET - ::1","level":"error"}
+{"level":"error","message":"login: OTP CONFIRMATION - SOMETHING WENT WRONG: MongoError: Topology was destroyed"}
+{"level":"error","message":"login: OTP CONFIRMATION - SOMETHING WENT WRONG: MongoError: Topology was destroyed"}

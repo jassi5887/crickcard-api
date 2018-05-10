@@ -1,6 +1,7 @@
 const {Otp} = require('../../../models/otp.model');
 const {User} = require('../../../models/user.model');
 const validator = require('validator');
+const winston = require('../../../config/winston');
 
 const OTPDOMAIN = "https://2factor.in/API/V1/";
 const OTPAUTOGEN = "/AUTOGEN";
@@ -14,38 +15,10 @@ const OTPTEMPLATE_LOGIN = "crickcard login";
 
 var request = require('request-promise-native');
 
-// generateNewOtp = async (req, res) => {
-//     const mobile = req.body.cc + req.body.mobile;
-//     //remove previous OTP
-//     await Otp.findOneAndRemove({
-//         mobile: mobile,
-//         otpType: req.body.otpType
-//     });
-
-//     let newOtp = new Otp({
-//         mobile: mobile
-//     });
-
-//     try {
-//         await newOtp.save();
-//         await newOtp.generateOtp(req.body.otpType);
-//         return newOtp;
-//     } catch(err) {
-//         let error = err;
-//         if (err.name === 'ValidationError') {
-//             console.log("MobileValidationError: \n", err);
-//             error = 'mobile number is invalid.';
-//         }
-
-//         res.status(400).send({"errorMsg": error});   
-//         return false;         
-//     }
-// }
-
-sendSMSOtp = (newOtp, mobile, res) => {
+sendSMSOtp = (newOtp, otpType, mobile, res) => {
     //this will create the URI needed to send an OTP via 2FACTOR
     const OTPAPIENDPOINT = OTPDOMAIN + OTPKEY + OTPTRANSPORT + mobile + "/" + newOtp + "/" + OTPTEMPLATE;
-    console.log("Attempt OTP", OTPAPIENDPOINT);
+    winston.log('info', `MOBILE: ${mobile} - Attempting ${otpType} OTP - ON: ${OTPAPIENDPOINT}`);
     const otpResponse =  request({
         uri: OTPAPIENDPOINT,
         headers: {"content-type": "application/x-www-form-urlencoded"},
@@ -53,11 +26,11 @@ sendSMSOtp = (newOtp, mobile, res) => {
     });
 
     if(!otpResponse.Status === "Success") {
-        console.error("OTP could not be Sent: \n", otpResponse);
+        winston.error(`MOBILE: ${mobile} - OTP COULD NOT BE SENT`);
         return res.status(400).send();
     }
 
-    console.log("OTP sent");
+    winston.log('info', `MOBILE: ${mobile} - OTP SENT`);
     res.status(200).send({"message": "otp generated"});
 }
 
@@ -81,41 +54,37 @@ module.exports = {
         //let newOtp;
         
         if (req.body.otpType == "registration") {
-            console.log("OTP TYPE: REGISTRATION");
             OTPTEMPLATE = OTPTEMPLATE_REGISTRATION;
             //check, if for registration, that user doesn't exist
-
             try {
                 const user = await User.findOne({mobile});
                 if(user) {
-                    console.log("SEND OTP:  ALREADY REGISTERED");
+                    winston.log('info', `REGISTRATION: ${mobile} - ALREADY REGISTERED`);
                     alreadyRegistered = true;
                     return res.status(400).send({"errorMsg": "Already registered. Please Login."});
                 }
             } catch(err) {
                 let error = err;
                 if (err.name === 'ValidationError') {
-                    console.log("MobileValidationError: \n", err);
+                    winston.log('error', `REGISTRATION: ${mobile} - INVALID NUMBER`);
                     error = 'mobile number is invalid.';
                 } else {
                     error = 'something went wrong';
+                    winston.log('error', `REGISTRATION: ${mobile} - ${err}`);
                 }
                 return res.status(400).send({"errorMsg": error});
             }
         }
 
         if (req.body.otpType == "login") {
-            console.log("OTP TYPE: LOGIN");
             OTPTEMPLATE = OTPTEMPLATE_LOGIN;
             try {
                 if (! await validator.isMobilePhone(mobile, 'any', {strictMode: true}) ) {
-                    console.log("validating mobile number: ", mobile);
                     throw new Error("ValidationError");
                 }
-                console.log("finding user");
                 const user = await User.findOne({mobile});
                 if(!user) {
-                    console.log("SEND OTP:  NOT REGISTERED");
+                    winston.log('info', `LOGIN: ${mobile} - NOT REGISTERED`);
                     notRegistered = true;
                     return res.status(400).send({"errorMsg": "Not registered. Please Register."});
                 }
@@ -123,17 +92,17 @@ module.exports = {
                 let error = err.message;
                 
                 if (err.name === 'ValidationError' || error == 'ValidationError') {
-                    console.log("MobileValidationError: \n", err);
+                    winston.log('error', `LOGIN: ${mobile} - INVALID MOBILE`);
                     error = 'mobile number is invalid.';
                 } else {
                     error = 'something went wrong';
+                    winston.log('error', `LOGIN: ${mobile} - ${err}`);
                 }
                 return res.status(400).send({"errorMsg": error});
             }
         }
 
         try {
-            console.log("trying to send OTP");
             await Otp.remove({
                 mobile: mobile,
                 otpType: req.body.otpType
@@ -146,14 +115,15 @@ module.exports = {
             //     await newOtp.save();
             // }
             const otp = await newOtp.generateOtp(req.body.otpType);
-            await sendSMSOtp(otp, mobile, res);
+            await sendSMSOtp(otp, req.body.otpType, mobile, res);
         } catch (err) {
             let error = err;
-            console.log(err);
+            //console.log(err);
             if (err.name === 'ValidationError') {
-                console.log("SEND OTP ERROR: \n", err);
+                winston.log('error', `${req.body.otpType}: ${mobile} - INVALID MOBILE`);
                 error = 'mobile number is invalid.';
             } else {
+                winston.log('error', `${req.body.otpType}: ${mobile} - ${err}`);
                 error = 'something went wrong';
             }
             return res.status(400).send({"errorMsg": error});
@@ -165,21 +135,25 @@ module.exports = {
      * receive OTP from user to confirm it
      */
     confirmOtp: async (req, res) => {
+        const mobile = req.body.cc + req.body.mobile;
+        winston.log('info', `${req.body.otpType}: ARTTEMPTING OTP CONFIRMATION - ${mobile}`);
         if (!req.body.otp) {
+            winston.log('info', `${req.body.otpType}: OTP CONFIRMATION - ${mobile} - OTP NOT RECEIVED`);
             return res.status(400).send({"errorMsg": "Please enter OTP!"});
         }
 
         if (!req.body.otpType || !req.body.mobile || !req.body.cc) {
+            winston.log('warn', `${req.body.otpType}: OTP CONFIRMATION - ${mobile} - INVALID REQUEST: ${req.body}`);
             return res.status(400).send({"errorMsg": "invalid request."});
         }
-        const mobile = req.body.cc + req.body.mobile;
-        console.log("SEARCH MOBILE: ", mobile, req.body.otpType);
+        
         Otp.findOne({
             mobile: mobile,
             otpType: req.body.otpType
         }).then( async (userOtp) => {
             if (!userOtp) {
                 console.log("OTP not found: ", userOtp);
+                winston.log('warn', `${req.body.otpType}: OTP CONFIRMATION - ${mobile} - NO MATCHING OTP IN DB`);
                 return res.status(400).send({"errorMsg": "invalid request."});
             }
             if (userOtp.otp === req.body.otp) {
@@ -188,8 +162,10 @@ module.exports = {
                 return res.status(200).send({"message": "otp confirmed"});
             }
 
+            winston.log('warn', `${req.body.otpType}: OTP CONFIRMATION - ${mobile} - INVALID OTP`);
             res.status(400).send({"errorMsg": "invalid OTP"});
         }).catch((err) => {
+            winston.log('error', `${req.body.otpType}: OTP CONFIRMATION - SOMETHING WENT WRONG: ${err}`);
             res.status(400).send();
         });
     }

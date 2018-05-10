@@ -15,7 +15,6 @@ var authenticate = (req, res, next) => {
         next();
 
     }).catch((err) => {
-        console.log("DENOED");
         res.status(401).send('DENIED');
     });
 };
