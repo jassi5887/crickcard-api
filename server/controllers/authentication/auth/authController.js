@@ -1,17 +1,16 @@
-const {User} = require('../../../models/user.model');
+const {RegisteredUser} = require('../../../models/user.model');
+const { Profile } = require('../../../models/profile.model');
 const {Otp} = require('../../../models/otp.model');
 const winston = require('../../../config/winston');
 const _ = require('lodash');
 
 findUser = async (mobile, res) => {
-    console.log("****** FIND USER ********");
     try {
-        return await User.findOne({
+        return await RegisteredUser.findOne({
             mobile: mobile
         });
         
     } catch(err)  {
-        console.log("Error: AUTH Register (Find User): \n");
         winston.log('error', `FIND USER: ${mobile} - ${err}`);
         return res.status(400).send({"errorMsg": "Something went wrong!"});
     }
@@ -30,19 +29,29 @@ checkOtpVerification = async (mobile, otpType, res) => {
 }
 
 createUser = async (req, res) => {
-    console.log("****** CREATE USER ********");
-    winston.log('info', `MOBILE: ${mobile} - ATTEMPTING TO CREATE USER`);
     const body = _.pick(req.body, ['cc', 'mobile', 'firstName', 'lastName']);
-    const user = new User({
-        mobile:  body.cc + body.mobile,
-        firstName: body.firstName,
-        lastName: body.lastName,
+    const mobile = body.cc + body.mobile;
+    winston.log('info', `MOBILE: ${body.mobile} - ATTEMPTING TO CREATE USER`);
+    const user = new RegisteredUser({
+        mobile: mobile,
         registrationComplete: true
     });
     try {
         await user.save();
+
+        const profile = new Profile({
+            firstName: body.firstName,
+            lastName: body.lastName,
+            user: user._id
+        });
+
+        await profile.save();
+
         const authToken = await user.generateAuthToken();
-        res.header('x-auth', authToken).send({user});
+        await Profile.findById(profile._id).populate('user').exec((err, userProfile) => {
+            res.header('x-auth', authToken).send({userProfile});
+        });
+
     } catch(err) {
         if (err.name === "ValidationError") {
             winston.log('error', `MOBILE: ${mobile} - INVALID MOBILE`);
@@ -55,33 +64,37 @@ createUser = async (req, res) => {
 
 module.exports = {
     login: async (req, res) => {
-        winston.log('info', `MOBILE: ${req.body.cc + req.body.mobile} - ATTEMPTING LOGIN`);
+        const mobile = req.body.cc + req.body.mobile;
+        winston.log('info', `MOBILE: ${mobile} - ATTEMPTING LOGIN`);
         if(!req.body.mobile || !req.body.cc) {
+            winston.log('error', `MOBILE: ${mobile} - ATTEMPTING LOGIN`);
             return res.status(400).send({"errorMsg": "invalid request"});
         }
 
         try {
-            const mobile = req.body.cc + req.body.mobile;
             const loginOtp = await Otp.findOne({mobile, otpType: "login", otpConfirmed: true});
             if (!loginOtp) {
                 winston.log('error', `MOBILE: ${mobile} - INVALID REQUEST - NO OTP IN DB`);
                 throw new Error({"errorMsg": "invalid request"});
             }
 
-            let user = await User.findOne({mobile});
+            let user = await RegisteredUser.findOne({mobile});
             if (!user) {
                 winston.log('error', `MOBILE: ${mobile} - NOT REGISTERED`);
                 throw new Error({"errorMsg": "Mobile not registered."});
             }
-
             const authToken = await user.generateAuthToken();
-            res.header('x-auth', authToken).send({user});
+
+            await Profile.findById({user: user._id}).populate('user').exec((err, userProfile) => {
+                res.header('x-auth', authToken).send({userProfile});
+            });         
 
         } catch(err) {
             if (err.errorMsg) {
+                winston.log('error', `Login: Mobile - {mobile} - ${err}`)
                 return res.status(400).send({"errorMsg": err.errorMsg});
             }
-
+            winston.log('error', `Login: Mobile - {mobile} - ${err}`)
             return res.status(400).send();
         }
         
@@ -95,7 +108,7 @@ module.exports = {
         }
 
         try {
-            const user = await User.findByToken(req.body['x-auth']);
+            const user = await RegisteredUser.findByToken(req.body['x-auth']);
             await user.removeToken(req.body['x-auth']);
             winston.log('info', `LOGGED OUT`);
             res.status(200).send();
@@ -110,19 +123,19 @@ module.exports = {
     register: async (req, res) => {
         winston.log('error', `ATTEMPTING REGISTER`);
         if(!req.body.mobile || !req.body.otpType || !req.body.cc) {
-            winston.log('error', `REGISTER: EITHER OF MOBILE/OTPTYPE/COUNTRY CODE NOT RECEIVED \n ${req.body}`);
+            winston.log('error', `REGISTER: EITHER OF MOBILE/OTPTYPE/COUNTRY CODE NOT RECEIVED - ${req.body}`);
             return res.status(400).send({"errorMsg": "invalid request"});
         }
 
         const mobile = req.body.cc + req.body.mobile;
 
         if(!req.body.firstName || !req.body.lastName) {
-            winston.log('error', `REGISTER: ${mobile} EITHER OF FIRSTNAME/LASTNAME NOT RECEIVED \n ${req.body}`);
+            winston.log('error', `REGISTER: ${mobile} EITHER OF FIRSTNAME/LASTNAME NOT RECEIVED - ${req.body}`);
             return res.status(400).send({"errorMsg": "First and Last Names are required!"});
         }
 
         findUser(mobile, res).then((user) => {
-            console.log("userFound", user);
+            winston.log('info', `Finding User - ${mobile}`);
             if (user) {
                 winston.log('info', `REGISTER: ${mobile} - ALREADY REGISTERED`);
                 return res.status(400).send({"errorMsg": "Mobile already registered! Please Login."});
@@ -143,7 +156,7 @@ module.exports = {
             });
 
         }).catch((err) => {
-            winston.log('error', `REGISTER: ${mobile} - ${ERR}`);
+            winston.log('error', `REGISTER: ${mobile} - ${err}`);
             return res.status(400).send({"errorMsg": "Something went wrong!"});
         });
 

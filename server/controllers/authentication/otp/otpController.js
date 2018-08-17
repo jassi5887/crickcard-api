@@ -1,5 +1,5 @@
 const {Otp} = require('../../../models/otp.model');
-const {User} = require('../../../models/user.model');
+const {RegisteredUser} = require('../../../models/user.model');
 const validator = require('validator');
 const winston = require('../../../config/winston');
 
@@ -57,7 +57,7 @@ module.exports = {
             OTPTEMPLATE = OTPTEMPLATE_REGISTRATION;
             //check, if for registration, that user doesn't exist
             try {
-                const user = await User.findOne({mobile});
+                const user = await RegisteredUser.findOne({mobile});
                 if(user) {
                     winston.log('info', `REGISTRATION: ${mobile} - ALREADY REGISTERED`);
                     alreadyRegistered = true;
@@ -82,7 +82,7 @@ module.exports = {
                 if (! await validator.isMobilePhone(mobile, 'any', {strictMode: true}) ) {
                     throw new Error("ValidationError");
                 }
-                const user = await User.findOne({mobile});
+                const user = await RegisteredUser.findOne({mobile});
                 if(!user) {
                     winston.log('info', `LOGIN: ${mobile} - NOT REGISTERED`);
                     notRegistered = true;
@@ -111,14 +111,10 @@ module.exports = {
                 mobile: mobile
             });
             await newOtp.save();
-            // if (req.body.otpType === 'registration') {
-            //     await newOtp.save();
-            // }
             const otp = await newOtp.generateOtp(req.body.otpType);
             await sendSMSOtp(otp, req.body.otpType, mobile, res);
         } catch (err) {
             let error = err;
-            //console.log(err);
             if (err.name === 'ValidationError') {
                 winston.log('error', `${req.body.otpType}: ${mobile} - INVALID MOBILE`);
                 error = 'mobile number is invalid.';
@@ -152,7 +148,6 @@ module.exports = {
             otpType: req.body.otpType
         }).then( async (userOtp) => {
             if (!userOtp) {
-                console.log("OTP not found: ", userOtp);
                 winston.log('warn', `${req.body.otpType}: OTP CONFIRMATION - ${mobile} - NO MATCHING OTP IN DB`);
                 return res.status(400).send({"errorMsg": "invalid request."});
             }

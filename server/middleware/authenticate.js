@@ -1,10 +1,11 @@
-var {User} = require('../models/user.model');
 const _ = require('lodash');
+const winston = require("../config/winston");
+const {RegisteredUser} = require('../models/user.model');
 
 var authenticate = (req, res, next) => {
     var token = req.header('x-auth');
 
-    User.findByToken(token).then((user) => {
+    RegisteredUser.findByToken(token).then((user) => {
         if (!user) {
             return Promise.reject();
         }
@@ -15,7 +16,8 @@ var authenticate = (req, res, next) => {
         next();
 
     }).catch((err) => {
-        res.status(401).send('DENIED');
+        winston.log("error", "authenticate: ${err}");
+        res.status(401).send({"errMessage": "Please Register or Login"});
     });
 };
 

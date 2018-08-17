@@ -21,10 +21,16 @@ var routes = require('./routes');
 const port = process.env.PORT;
 
 app.use(function(req, res, next) {
-    res.setHeader('Access-Control-Allow-Origin', process.env['ALLOWED_DOMAIN']);
-    res.setHeader('Access-Control-Allow-Headers', 'X-Requested-With,content-type,x-auth');
-    res.setHeader('Access-Control-Expose-Headers', 'x-auth');
-    next();
+    res.header('Access-Control-Allow-Origin', process.env['ALLOWED_DOMAIN']);
+    res.header('Access-Control-Allow-Headers', 'X-Requested-With,Content-Type,x-auth');
+    res.header('Access-Control-Expose-Headers', 'x-auth, content-type');
+
+    //this is so that OPTION request before HTTP GET doesn't get 401
+    if ('OPTIONS' == req.method) {
+        res.send(200);
+    } else {
+        next();
+    }
 });
 
 app.use(bodyParser.json());
